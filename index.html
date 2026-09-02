@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#0D1117">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Daily">
+    <title>Daily</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <link rel="stylesheet" href="style.css">
+    <!-- Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+    <!-- ==================== トースト通知 (オフライン警告等) ==================== -->
+    <div id="toast" class="toast"></div>
+
+    <!-- ==================== 認証画面 ==================== -->
+    <div class="screen active" id="screen-auth">
+        <div class="auth-container">
+            <h1 class="auth-title">Daily</h1>
+            <p class="auth-desc">必要な情報だけを、シンプルに。</p>
+            <div class="auth-form">
+                <input type="email" id="authEmail" class="auth-input" placeholder="メールアドレス" autocomplete="email">
+                <input type="password" id="authPassword" class="auth-input" placeholder="パスワード" autocomplete="current-password">
+                <div class="auth-buttons">
+                    <button class="btn btn-primary" onclick="handleLogin()">ログイン</button>
+                    <button class="btn btn-secondary" onclick="handleSignUp()">新規登録</button>
+                </div>
+                <p id="authMessage" class="auth-message"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== メインアプリ (ログイン後に表示) ==================== -->
+    <div id="main-app" style="display: none;">
+        
+        <!-- ヘッダー -->
+        <header class="app-header">
+            <div>
+                <div class="app-title">Daily</div>
+                <div class="header-date" id="headerDate"></div>
+            </div>
+        </header>
+
+        <!-- 今日の画面 -->
+        <div class="screen" id="screen-today">
+            <!-- 天気カード -->
+            <div class="card" id="weatherCard">
+                <div class="card-label">今日の天気</div>
+                <div class="weather-row">
+                    <svg class="icon icon-lg weather-icon" id="weatherIcon" viewBox="0 0 24 24"></svg>
+                    <div>
+                        <div class="weather-temp" id="weatherTemp">--<span class="unit">°C</span></div>
+                        <div class="weather-desc" id="weatherDesc">読み込み中...</div>
+                    </div>
+                </div>
+                <div class="weather-advice-row" id="weatherAdvice"></div>
+            </div>
+
+            <!-- 勤務形態カード -->
+            <div class="card">
+                <div class="card-label">勤務形態</div>
+                <div class="work-status-row">
+                    <button class="work-badge" id="workBadge" onclick="openWorkModal()">
+                        <svg class="icon icon-sm badge-icon" viewBox="0 0 24 24"></svg>
+                        <span id="workBadgeLabel">--</span>
+                        <span class="chevron">▾</span>
+                    </button>
+                    <div class="office-days-indicator">
+                        <div class="office-days-circle" id="officeDaysCircle">0</div>
+                        <span class="office-days-label">今週の出社</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ゴミの日 -->
+            <div class="card">
+                <div class="card-label">今日のゴミ</div>
+                <div class="garbage-row" id="garbageRow">
+                    <span class="event-empty" id="garbageEmpty">読み込み中...</span>
+                </div>
+            </div>
+
+            <!-- 予定・メモ -->
+            <div class="card">
+                <div class="card-label">今日の予定</div>
+                <div class="event-list" id="todayEvents">
+                    <div class="event-empty">読み込み中...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- カレンダー画面 -->
+        <div class="screen" id="screen-calendar">
+            <div class="calendar-header">
+                <div class="calendar-month" id="calendarMonth"></div>
+                <div class="calendar-nav">
+                    <button class="calendar-today-btn" onclick="goToday()">今日</button>
+                    <button onclick="changeMonth(-1)">‹</button>
+                    <button onclick="changeMonth(1)">›</button>
+                </div>
+            </div>
+            <div class="calendar-grid" id="calendarGrid"></div>
+
+            <!-- 選択日の詳細 -->
+            <div class="selected-date-section">
+                <div class="selected-date-title" id="selectedDateTitle"></div>
+                <div class="selected-date-work">
+                    <span class="label">勤務形態</span>
+                    <select id="selectedDateWorkSelect" onchange="updateWorkFromSelect()">
+                        <option value="office">出社</option>
+                        <option value="remote">リモート</option>
+                        <option value="off">休日</option>
+                        <option value="paid_full">有給（全休）</option>
+                        <option value="paid_am">有給（AM半休）</option>
+                        <option value="paid_pm">有給（PM半休）</option>
+                        <option value="holiday_work">休日出勤</option>
+                    </select>
+                </div>
+                <div class="event-list" id="selectedDateEvents">
+                    <div class="event-empty">予定なし</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 設定画面 -->
+        <div class="screen" id="screen-settings">
+            <!-- 勤務形態のデフォルト -->
+            <div class="settings-group">
+                <div class="settings-group-title">勤務形態のデフォルト</div>
+                <div id="workDefaultsSettings"></div>
+            </div>
+
+            <!-- ゴミの日 -->
+            <div class="settings-group">
+                <div class="settings-group-title">ゴミの日</div>
+                <div id="garbageSettings"></div>
+            </div>
+
+            <!-- 天気 -->
+            <div class="settings-group">
+                <div class="settings-group-title">天気</div>
+                <div class="settings-item" onclick="editWeatherLocation()">
+                    <span class="settings-item-label">取得地点</span>
+                    <span class="settings-item-value" id="weatherLocationValue">未設定</span>
+                </div>
+            </div>
+
+            <!-- アカウント (ログアウト追加) -->
+            <div class="settings-group">
+                <div class="settings-group-title">アカウント</div>
+                <div class="settings-item" onclick="handleLogout()" style="cursor: pointer;">
+                    <span class="settings-item-label" style="color: #ff453a;">ログアウト</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- +ボタン -->
+        <button class="fab" id="fab" onclick="openAddEventModal()">
+            <svg class="icon" viewBox="0 0 24 24" fill="none">
+                <line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+        </button>
+
+        <!-- タブバー -->
+        <nav class="tab-bar">
+            <button class="tab active" data-screen="screen-today" onclick="switchTab('screen-today', this)">
+                <svg class="tab-icon" viewBox="0 0 24 24" fill="none">
+                    <rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.6"/>
+                    <line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" stroke-width="1.6"/>
+                    <line x1="8" y1="3" x2="8" y2="7" stroke="currentColor" stroke-width="1.6"/>
+                    <line x1="16" y1="3" x2="16" y2="7" stroke="currentColor" stroke-width="1.6"/>
+                </svg>
+                今日
+            </button>
+            <button class="tab" data-screen="screen-calendar" onclick="switchTab('screen-calendar', this)">
+                <svg class="tab-icon" viewBox="0 0 24 24" fill="none">
+                    <rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.6"/>
+                    <line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" stroke-width="1.6"/>
+                    <line x1="8" y1="3" x2="8" y2="7" stroke="currentColor" stroke-width="1.6"/>
+                    <line x1="16" y1="3" x2="16" y2="7" stroke="currentColor" stroke-width="1.6"/>
+                </svg>
+                カレンダー
+            </button>
+            <button class="tab" data-screen="screen-settings" onclick="switchTab('screen-settings', this)">
+                <svg class="tab-icon" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6"/>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+                </svg>
+                設定
+            </button>
+        </nav>
+    </div> <!-- /#main-app -->
+
+    <!-- ==================== モーダル群 (変更なし) ==================== -->
+    <!-- 勤務形態変更モーダル -->
+    <div class="modal-overlay" id="workModal">
+        <div class="modal-sheet">
+            <div class="modal-handle"></div>
+            <div class="modal-title">勤務形態を変更</div>
+            <div id="workModalOptions"></div>
+        </div>
+    </div>
+
+    <!-- 予定追加モーダル -->
+    <div class="modal-overlay" id="addEventModal">
+        <div class="modal-sheet">
+            <div class="modal-handle"></div>
+            <div class="modal-title">予定を追加</div>
+            <input type="text" id="newEventInput" class="modal-input" placeholder="予定やメモを入力..." autocomplete="off">
+            <button class="modal-submit" onclick="addEvent()">追加</button>
+        </div>
+    </div>
+
+    <!-- 天気地点編集モーダル -->
+    <div class="modal-overlay" id="weatherLocationModal">
+        <div class="modal-sheet">
+            <div class="modal-handle"></div>
+            <div class="modal-title">天気の取得地点</div>
+            <input type="text" id="weatherLocationNameInput" class="modal-input" placeholder="場所の名前（例：東京）" autocomplete="off">
+            <div class="modal-input-row">
+                <input type="number" id="weatherLatInput" class="modal-input" placeholder="緯度（例：35.68）" step="0.01" autocomplete="off">
+                <input type="number" id="weatherLonInput" class="modal-input" placeholder="経度（例：139.76）" step="0.01" autocomplete="off">
+            </div>
+            <button class="modal-submit" onclick="saveWeatherLocation()">保存</button>
+        </div>
+    </div>
+
+    <!-- 削除確認モーダル -->
+    <div class="modal-overlay" id="deleteConfirmModal">
+        <div class="modal-sheet">
+            <div class="modal-handle"></div>
+            <div class="modal-title">この予定を削除しますか？</div>
+            <p class="modal-text" id="deleteEventText"></p>
+            <div class="modal-button-row">
+                <button class="modal-submit danger" onclick="confirmDeleteEvent()">削除</button>
+                <button class="modal-submit" onclick="closeDeleteConfirmModal()">キャンセル</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
