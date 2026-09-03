@@ -65,6 +65,39 @@ Supabase Edge Function `daily-summary` が、当日の天気・服装アドバ�
   トリガー「時刻」 → アクション「URLの内容を取得」（上記エンドポイント）→
   「辞書から値を取得」（キー: `body`）→「通知を表示」。保存時に「実行前に尋ねる」をオフにする。
 
+### 通知文言の変更手順
+
+通知本文の組み立ては `daily-summary`（Supabaseダッシュボード → Edge Functions →
+`daily-summary` → Code）内で行っている。文言を変えたい場合は以下を編集し、Deployで
+再反映する。
+
+1. **各項目のラベル文言**（例: 「勤務」「ゴミ」「予定」、天気の「／」区切り等）
+   → ファイル末尾付近、`body` を組み立てている箇所
+   ```ts
+   const body = [
+     weatherLabel,
+     `勤務: ${workLabel}`,
+     `ゴミ: ${garbageLabel}`,
+     `予定: ${eventsLabel}`,
+   ].join("\n");
+   ```
+   この配列の各行の文言・並び順・区切り文字（`\n`）を編集する。
+2. **通知タイトル**（例: `Daily 9/3(木)`）→ `title: \`Daily ${dateLabel}\`` の
+   `"Daily"` 部分を編集する。
+3. **天気の表現**（「晴れ 24°C／傘不要／半袖＋薄手の上着」の組み立て）
+   → `weatherLabel = \`${desc} ${Math.round(tempMax)}°C／${umbrella}／${clothing}\`;`
+   の行を編集する。
+4. **服装アドバイス・傘要否・勤務形態などの個別ラベル文言**は、ファイル冒頭の
+   `CLOTHING_THRESHOLDS` / `WORK_LABELS` 定数、および傘要否を組み立てている
+   `umbrella` 変数の三項演算子部分を編集する（app.jsの同名表現と揃える場合は
+   両方更新する。上記「保守・運用手順」参照）。
+5. 編集後はエンドポイントURLをSafari等で直接開き、返ってきたJSONの `body` が
+   意図通りか確認する。ショートカット側の設定変更は不要（`body` キーの中身が
+   変わるだけなので、オートメーション側はそのまま動く）。
+
+このセッション（Claude Code）に依頼すれば、Supabase MCP経由でコード編集・再デプロイを
+代行できる。
+
 ## 保守・運用手順
 
 ### 年1回：祝日データ（HOLIDAYS）の更新
