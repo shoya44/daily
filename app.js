@@ -65,7 +65,8 @@ let workRecordsCache = {};
 let selectedDate = new Date();
 let currentYear = new Date().getFullYear();
 let currentMonth = new Date().getMonth();
-let deleteEventId = null;
+let editingEventId = null;
+let editingEventDate = null;
 let editingWorkDefaultDay = null;
 let addEventTargetDate = null;
 
@@ -263,6 +264,20 @@ async function addEventToDb(dateStr, text) {
     return data;
 }
 
+async function updateEventInDb(eventId, dateStr, text) {
+    if (!db || !checkOnline()) return false;
+    const { data, error } = await db.from('events').update({ text }).eq('id', eventId).select().single();
+    if (error) {
+        showToast('予定の更新に失敗しました（通信状態をご確認ください）');
+        return false;
+    }
+    if (eventsCache[dateStr]) {
+        const idx = eventsCache[dateStr].findIndex(ev => ev.id === eventId);
+        if (idx !== -1) eventsCache[dateStr][idx] = data;
+    }
+    return true;
+}
+
 async function deleteEventFromDb(eventId, dateStr) {
     if (!db || !checkOnline()) return false;
     const { error } = await db.from('events').delete().eq('id', eventId);
@@ -331,8 +346,10 @@ function getThisWeekRange() {
 
 // 今週が月をまたぐ場合でも work_records を正しく反映するため、
 // 月キャッシュ（workRecordsCache）に頼らず今週分をDBから個別取得する。
-async function getOfficeDaysThisWeek() {
+// 「残り」なので今日より前の日は数えない（今日がoffice/holiday_workなら含む）。
+async function getRemainingOfficeDaysThisWeek() {
     const { monday, sunday } = getThisWeekRange();
+    const todayStr = formatDate(new Date());
     let weekRecords = {};
 
     if (db && currentUser) {
@@ -350,10 +367,27 @@ async function getOfficeDaysThisWeek() {
     for (let i = 0; i < 7; i++) {
         const date = new Date(monday);
         date.setDate(monday.getDate() + i);
+        if (formatDate(date) < todayStr) continue;
         const status = resolveWorkStatus(date, weekRecords);
         if (status === 'office' || status === 'holiday_work') count++;
     }
     return count;
+}
+
+// 今週（今日〜日曜）の予定を、月キャッシュに頼らずDBから直接取得する。
+// 「今日の予定」カードと重複しないよう、呼び出し側で当日分は除外する。
+async function getThisWeekUpcomingEvents() {
+    if (!db || !currentUser) return [];
+    const { sunday } = getThisWeekRange();
+    const todayStr = formatDate(new Date());
+    const { data } = await db
+        .from('events')
+        .select('*')
+        .gte('date', todayStr)
+        .lte('date', formatDate(sunday))
+        .order('date', { ascending: true })
+        .order('created_at', { ascending: true });
+    return data || [];
 }
 
 function getGarbageForDate(dateObj) {
@@ -398,7 +432,9 @@ async function fetchWeather() {
 
 function renderWeather(weatherCode, tempMax, precipProb) {
     const weatherInfo = getWeatherInfo(weatherCode);
-    document.getElementById('weatherIcon').innerHTML = weatherInfo.icon;
+    const iconEl = document.getElementById('weatherIcon');
+    iconEl.innerHTML = weatherInfo.icon;
+    iconEl.style.color = weatherInfo.color;
     document.getElementById('weatherTemp').innerHTML = `${Math.round(tempMax)}<span class="unit">°C</span>`;
     document.getElementById('weatherDesc').textContent = weatherInfo.label;
 
@@ -406,7 +442,7 @@ function renderWeather(weatherCode, tempMax, precipProb) {
     const needUmbrella = precipProb >= UMBRELLA_THRESHOLD;
     const clothing = getClothingAdvice(tempMax);
     adviceRow.innerHTML = `
-        <div class="weather-advice ${needUmbrella ? '' : 'clothing'}">
+        <div class="weather-advice ${needUmbrella ? 'umbrella-alert' : 'clothing'}">
             <span class="dot"></span>${needUmbrella ? '傘必要' : '傘不要'}
         </div>
         <div class="weather-advice clothing">
@@ -423,20 +459,45 @@ function getClothingAdvice(tempMax) {
 }
 
 function getWeatherInfo(code) {
-    if (code === 0 || code === 1) return { label: '晴れ', icon: sunIcon() };
-    if (code === 2) return { label: '晴れ時々曇り', icon: partlyCloudyIcon() };
-    if (code === 3) return { label: '曇り', icon: cloudIcon() };
-    if (code >= 50 && code <= 69) return { label: '雨', icon: rainIcon() };
-    if (code >= 70 && code <= 79) return { label: '雪', icon: snowIcon() };
-    return { label: '曇り', icon: cloudIcon() };
+    if (code === 0 || code === 1) return { label: '晴れ', icon: sunIcon(), color: '#E3B341' };
+    if (code === 2) return { label: '晴れ時々曇り', icon: partlyCloudyIcon(), color: '#E3B341' };
+    if (code === 3) return { label: '曇り', icon: cloudIcon(), color: '#8B949E' };
+    if (code >= 50 && code <= 69) return { label: '雨', icon: rainIcon(), color: '#58A6FF' };
+    if (code >= 70 && code <= 79) return { label: '雪', icon: snowIcon(), color: '#A5D6FF' };
+    return { label: '曇り', icon: cloudIcon(), color: '#8B949E' };
 }
 
-// Icon SVG Helpers
-function sunIcon() { return `<circle cx="12" cy="12" r="4" fill="currentColor"/><line x1="12" y1="2" x2="12" y2="5" stroke="currentColor" stroke-width="1.5"/><line x1="12" y1="19" x2="12" y2="22" stroke="currentColor" stroke-width="1.5"/><line x1="2" y1="12" x2="5" y2="12" stroke="currentColor" stroke-width="1.5"/><line x1="19" y1="12" x2="22" y2="12" stroke="currentColor" stroke-width="1.5"/>`; }
-function partlyCloudyIcon() { return `<path d="M6 14a4 4 0 0 1 0-8 5 5 0 0 1 9.5-1.5A3.5 3.5 0 0 1 16 14H6z" stroke="currentColor" stroke-width="1.5" fill="none"/>`; }
-function cloudIcon() { return `<path d="M6 14a4 4 0 0 1 0-8 5 5 0 0 1 9.5-1.5A3.5 3.5 0 0 1 16 14H6z" stroke="currentColor" stroke-width="1.5" fill="none"/>`; }
-function rainIcon() { return `<path d="M6 12a4 4 0 0 1 0-8 5 5 0 0 1 9.5-1.5A3.5 3.5 0 0 1 16 12H6z" stroke="currentColor" stroke-width="1.5" fill="none"/><line x1="8" y1="15" x2="8" y2="19" stroke="currentColor" stroke-width="1.5"/><line x1="12" y1="15" x2="12" y2="19" stroke="currentColor" stroke-width="1.5"/>`; }
-function snowIcon() { return `<circle cx="8" cy="16" r="1" fill="currentColor"/><circle cx="12" cy="16" r="1" fill="currentColor"/>`; }
+// Icon SVG Helpers（塗りつぶし主体で視認性を高めたデザイン）
+function sunIcon() {
+    return `<circle cx="12" cy="12" r="5" fill="currentColor"/>
+<line x1="20" y1="12" x2="22.5" y2="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+<line x1="17.66" y1="17.66" x2="19.42" y2="19.42" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+<line x1="12" y1="20" x2="12" y2="22.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+<line x1="6.34" y1="17.66" x2="4.58" y2="19.42" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+<line x1="4" y1="12" x2="1.5" y2="12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+<line x1="6.34" y1="6.34" x2="4.58" y2="4.58" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+<line x1="12" y1="4" x2="12" y2="1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+<line x1="17.66" y1="6.34" x2="19.42" y2="4.58" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>`;
+}
+function partlyCloudyIcon() {
+    return `<circle cx="17" cy="7.5" r="3.3" fill="currentColor" opacity="0.85"/>
+<path d="M6 18.5a4 4 0 0 1 0-8 5 5 0 0 1 9-2.2 3.5 3.5 0 0 1 .3 6.98A3.47 3.47 0 0 1 15 18.5H6z" fill="currentColor"/>`;
+}
+function cloudIcon() {
+    return `<path d="M6 18a4.5 4.5 0 0 1 0-9c.2 0 .4 0 .6.02A5.5 5.5 0 0 1 17 10.5c0 .17 0 .34-.02.5A3.75 3.75 0 0 1 16.5 18H6z" fill="currentColor"/>`;
+}
+function rainIcon() {
+    return `<path d="M6 14.5a4 4 0 0 1 0-8c.2 0 .4 0 .6.02A5 5 0 0 1 16 8.5c0 .14 0 .28-.02.4A3.25 3.25 0 0 1 15.5 14.5H6z" fill="currentColor"/>
+<line x1="8" y1="17" x2="7" y2="21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+<line x1="12" y1="17" x2="11" y2="21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+<line x1="16" y1="17" x2="15" y2="21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>`;
+}
+function snowIcon() {
+    return `<path d="M6 12.5a4 4 0 0 1 0-8c.2 0 .4 0 .6.02A5 5 0 0 1 16 6.5c0 .14 0 .28-.02.4A3.25 3.25 0 0 1 15.5 12.5H6z" fill="currentColor"/>
+<circle cx="8" cy="18" r="1.3" fill="currentColor"/>
+<circle cx="12" cy="20" r="1.3" fill="currentColor"/>
+<circle cx="16" cy="18" r="1.3" fill="currentColor"/>`;
+}
 
 function getWorkStatusIcon(status) {
     const icons = {
@@ -459,17 +520,41 @@ async function renderTodayScreen() {
     document.getElementById('workBadgeLabel').textContent = getWorkStatusLabel(status);
     document.getElementById('workBadge').querySelector('.badge-icon').outerHTML = getWorkStatusIcon(status);
 
-    // 出社日数
-    const officeDays = await getOfficeDaysThisWeek();
+    // 今週の残り出社日数（少ないほど良い＝緑、多いほど注意＝赤）
+    const remainingOfficeDays = await getRemainingOfficeDaysThisWeek();
     const circle = document.getElementById('officeDaysCircle');
-    circle.textContent = officeDays;
+    circle.textContent = remainingOfficeDays;
     circle.className = 'office-days-circle';
-    if (officeDays === 1) circle.classList.add('warning');
-    if (officeDays === 0) circle.classList.add('danger');
+    if (remainingOfficeDays === 1) circle.classList.add('warning');
+    if (remainingOfficeDays >= 2) circle.classList.add('danger');
 
     renderGarbage(today);
     renderEventList(eventsCache[todayStr] || [], document.getElementById('todayEvents'));
+
+    const weekEvents = await getThisWeekUpcomingEvents();
+    renderWeekEvents(weekEvents.filter(ev => ev.date !== todayStr));
+
     fetchWeather();
+}
+
+function renderWeekEvents(events) {
+    const container = document.getElementById('weekEvents');
+    container.innerHTML = '';
+    if (events.length === 0) {
+        container.innerHTML = '<div class="event-empty">予定なし</div>';
+        return;
+    }
+    const days = ['日', '月', '火', '水', '木', '金', '土'];
+    events.forEach(ev => {
+        const [y, m, d] = ev.date.split('-').map(Number);
+        const dateLabel = `${m}/${d}(${days[new Date(y, m - 1, d).getDay()]})`;
+        container.innerHTML += `
+            <div class="event-item" onclick="openEditEventModal('${ev.id}', '${ev.date}', '${escapeHtml(ev.text)}')">
+                <span class="event-date-badge">${dateLabel}</span>
+                ${escapeHtml(ev.text)}
+            </div>
+        `;
+    });
 }
 
 function renderGarbage(dateObj) {
@@ -493,7 +578,7 @@ function renderEventList(events, container) {
     }
     events.forEach(ev => {
         container.innerHTML += `
-            <div class="event-item" onclick="openDeleteConfirmModal('${ev.id}', '${formatDate(new Date(ev.date))}', '${escapeHtml(ev.text)}')">
+            <div class="event-item" onclick="openEditEventModal('${ev.id}', '${formatDate(new Date(ev.date))}', '${escapeHtml(ev.text)}')">
                 <svg class="icon icon-sm event-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.5"/></svg>
                 ${escapeHtml(ev.text)}
             </div>
@@ -542,7 +627,8 @@ function renderCalendar() {
 
         const hasEvents = eventsCache[dateStr]?.length > 0;
         const hasWorkOverride = !!workRecordsCache[dateStr];
-        if (hasEvents || hasWorkOverride) {
+        const hasGarbage = getGarbageForDate(dateObj).length > 0;
+        if (hasEvents || hasWorkOverride || hasGarbage) {
             const dots = document.createElement('span');
             dots.className = 'dots';
             if (hasEvents) {
@@ -553,6 +639,11 @@ function renderCalendar() {
             if (hasWorkOverride) {
                 const dot = document.createElement('span');
                 dot.className = 'dot dot-work';
+                dots.appendChild(dot);
+            }
+            if (hasGarbage) {
+                const dot = document.createElement('span');
+                dot.className = 'dot dot-garbage';
                 dots.appendChild(dot);
             }
             btn.appendChild(dots);
@@ -585,6 +676,12 @@ function updateSelectedDateSection() {
 
     const dateStr = formatDate(selectedDate);
     document.getElementById('selectedDateWorkSelect').value = getWorkStatus(selectedDate);
+
+    const garbage = getGarbageForDate(selectedDate);
+    document.getElementById('selectedDateGarbage').innerHTML = garbage
+        .map(type => `<div class="garbage-badge">${escapeHtml(type)}</div>`)
+        .join('');
+
     renderEventList(eventsCache[dateStr] || [], document.getElementById('selectedDateEvents'));
 }
 
@@ -725,26 +822,40 @@ async function addEvent() {
     renderCalendar();
 }
 
-function openDeleteConfirmModal(eventId, dateStr, eventText) {
-    deleteEventId = eventId;
-    document.getElementById('deleteEventText').textContent = eventText;
-    document.getElementById('deleteConfirmModal').dataset.date = dateStr;
-    document.getElementById('deleteConfirmModal').classList.add('show');
+function openEditEventModal(eventId, dateStr, eventText) {
+    editingEventId = eventId;
+    editingEventDate = dateStr;
+    document.getElementById('editEventInput').value = eventText;
+    document.getElementById('editEventModal').classList.add('show');
 }
 
-async function confirmDeleteEvent() {
-    if (!deleteEventId) return;
-    const dateStr = document.getElementById('deleteConfirmModal').dataset.date;
-    await deleteEventFromDb(deleteEventId, dateStr);
-    deleteEventId = null;
-    closeModal('deleteConfirmModal');
+async function saveEditEvent() {
+    const input = document.getElementById('editEventInput');
+    const text = input.value.trim();
+    if (!text || !editingEventId) return;
+
+    await updateEventInDb(editingEventId, editingEventDate, text);
+    editingEventId = null;
+    editingEventDate = null;
+    closeModal('editEventModal');
     renderTodayScreen();
     renderCalendar();
 }
 
-function closeDeleteConfirmModal() {
-    deleteEventId = null;
-    closeModal('deleteConfirmModal');
+async function confirmDeleteEvent() {
+    if (!editingEventId) return;
+    await deleteEventFromDb(editingEventId, editingEventDate);
+    editingEventId = null;
+    editingEventDate = null;
+    closeModal('editEventModal');
+    renderTodayScreen();
+    renderCalendar();
+}
+
+function closeEditEventModal() {
+    editingEventId = null;
+    editingEventDate = null;
+    closeModal('editEventModal');
 }
 
 function closeModal(modalId) {

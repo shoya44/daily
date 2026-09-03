@@ -197,7 +197,7 @@ body {
 
 /* ===== 天気カード ===== */
 .weather-row { display: flex; align-items: flex-start; gap: 14px; }
-.weather-icon { color: #E3B341; margin-top: 2px; }
+.weather-icon { color: #E3B341; margin-top: 2px; width: 44px; height: 44px; flex-shrink: 0; }
 .weather-temp { font-size: 34px; font-weight: 500; letter-spacing: -0.03em; line-height: 1; }
 .weather-temp .unit { font-size: 15px; font-weight: 400; color: var(--text-secondary); letter-spacing: 0; margin-left: 2px; }
 .weather-desc { font-size: 13px; color: var(--text-secondary); margin-top: 6px; font-weight: 450; }
@@ -217,6 +217,13 @@ body {
 }
 .weather-advice .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent-blue); flex-shrink: 0; }
 .weather-advice.clothing .dot { background: var(--accent-green); }
+.weather-advice.umbrella-alert {
+    background: rgba(248, 81, 73, 0.1);
+    border-color: rgba(248, 81, 73, 0.25);
+    color: var(--accent-red);
+    font-weight: 600;
+}
+.weather-advice.umbrella-alert .dot { background: var(--accent-red); }
 
 /* ===== 勤務形態 ===== */
 .work-status-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
@@ -299,6 +306,16 @@ body {
 .event-item:hover { border-color: rgba(240, 246, 252, 0.06); }
 .event-item .event-icon { color: var(--text-muted); flex-shrink: 0; margin-top: 1px; }
 .event-empty { color: var(--text-muted); font-size: 13px; padding: 8px 0; font-weight: 450; }
+.event-date-badge {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: rgba(240, 246, 252, 0.05);
+    border-radius: 5px;
+    padding: 2px 6px;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
 
 /* ===== FAB ===== */
 .fab {
@@ -382,9 +399,11 @@ body {
 .calendar-day .dots { position: absolute; bottom: 5px; display: flex; gap: 3px; }
 .calendar-day .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--accent-blue); }
 .calendar-day .dot.dot-work { background: var(--accent-yellow); }
+.calendar-day .dot.dot-garbage { background: var(--accent-purple); }
 .calendar-day.today .dot { background: var(--bg); }
 .calendar-day.selected .dot.dot-event { background: var(--accent-blue); }
 .calendar-day.selected .dot.dot-work { background: var(--accent-yellow); }
+.calendar-day.selected .dot.dot-garbage { background: var(--accent-purple); }
 
 /* 選択日の詳細 */
 .selected-date-section {
@@ -404,6 +423,8 @@ body {
     border-bottom: 1px solid var(--border-light);
 }
 .selected-date-work .label { font-size: 12px; color: var(--text-secondary); font-weight: 450; flex-shrink: 0; }
+.selected-date-garbage { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.selected-date-garbage:empty { display: none; margin-bottom: 0; }
 .selected-date-work select {
     background: transparent;
     border: 1px solid var(--border);
