@@ -3,7 +3,7 @@
    最小限のキャッシュとオフライン起動対応
    ======================================== */
 
-const CACHE_NAME = 'daily-app-v1';
+const CACHE_NAME = 'daily-app-v2';
 const CACHE_URLS = [
     './',
     './index.html',
