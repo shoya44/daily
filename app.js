@@ -116,6 +116,13 @@ async function showMainApp() {
     updateHeaderDate();
 
     try {
+        // バックグラウンド復帰直後は保持中のaccess_tokenが期限切れ間際のことがあり、
+        // そのままDBクエリを投げると401で失敗する。getSession()は期限が近い場合に
+        // 自動でトークンをリフレッシュしてから返すため、先に呼んで確実に有効な
+        // トークンでその後のクエリを実行できるようにする。
+        const { data: { session } } = await db.auth.getSession();
+        if (session) currentUser = session.user;
+
         await loadSettings();
         await loadCurrentMonthData();
         renderCalendar();
