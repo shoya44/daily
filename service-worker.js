@@ -3,7 +3,7 @@
    最小限のキャッシュとオフライン起動対応
    ======================================== */
 
-const CACHE_NAME = 'daily-app-v9';
+const CACHE_NAME = 'daily-app-v10';
 const CACHE_URLS = [
     './',
     './index.html',
@@ -41,8 +41,13 @@ self.addEventListener('fetch', (event) => {
     // GET以外のメソッド（POST, PATCH, DELETE等）はキャッシュ処理を行わない
     if (event.request.method !== 'GET') return;
 
-    // Supabase DB/Auth や Open-Meteo API はキャッシュ対象外
     const url = new URL(event.request.url);
+
+    // ブラウザ拡張機能由来のリクエスト（chrome-extension:, moz-extension: 等）は
+    // Cache APIでput()できず未処理のPromise拒否になるため、http(s)以外は対象外とする。
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+
+    // Supabase DB/Auth や Open-Meteo API はキャッシュ対象外
     if (url.hostname.includes('supabase.co') || url.hostname.includes('open-meteo.com')) {
         return;
     }
@@ -58,7 +63,8 @@ self.addEventListener('fetch', (event) => {
                         if (response.status === 200 && response.type === 'basic') {
                             const responseClone = response.clone();
                             caches.open(CACHE_NAME)
-                                .then(cache => cache.put(event.request, responseClone));
+                                .then(cache => cache.put(event.request, responseClone))
+                                .catch(err => console.error('Cache put error:', err));
                         }
                         return response;
                     })
