@@ -5,8 +5,8 @@
 // ========================================
 // 設定値（SupabaseのURLとAnon Keyを設定してください）
 // ========================================
-const SUPABASE_URL = 'https://YOUR_PROJECT.supabase.co';
-const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY';
+const SUPABASE_URL = 'https://sgyfrlxlhflawpwtyirq.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNneWZybHhsaGZsYXdwd3R5aXJxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYwODcxODYsImV4cCI6MjEwMTY2MzE4Nn0.Me_YOplC2n6eNv6tQ-TrJc9w9A-hanAbO-xhJQqfvrc';
 
 // 服装アドバイスの温度閾値
 const CLOTHING_THRESHOLDS = [
