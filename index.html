@@ -49,61 +49,83 @@
 
         <!-- 今日の画面 -->
         <div class="screen" id="screen-today">
-            <!-- 天気カード -->
-            <div class="card" id="weatherCard">
-                <div class="card-label">今日どうする？</div>
-                <div class="weather-row">
-                    <svg class="icon icon-lg weather-icon" id="weatherIcon" viewBox="0 0 24 24"></svg>
-                    <div>
-                        <div class="weather-temp" id="weatherTemp">--<span class="unit">°C</span></div>
-                        <div class="weather-desc" id="weatherDesc">読み込み中...</div>
+            <!-- 今日カード -->
+            <div class="day-card">
+                <div class="day-card-header">今日</div>
+
+                <div class="day-section">
+                    <div class="weather-row">
+                        <svg class="icon icon-lg weather-icon" id="weatherIconToday" viewBox="0 0 24 24"></svg>
+                        <div>
+                            <div class="weather-temp" id="weatherTempToday">--<span class="unit">°C</span></div>
+                            <div class="weather-desc" id="weatherDescToday">読み込み中...</div>
+                        </div>
+                    </div>
+                    <div class="weather-advice-row" id="weatherAdviceToday"></div>
+                </div>
+
+                <div class="day-section">
+                    <div class="work-status-row">
+                        <button class="work-badge" id="workBadgeToday" onclick="openWorkModal('today')">
+                            <svg class="icon icon-sm badge-icon" viewBox="0 0 24 24"></svg>
+                            <span id="workBadgeLabelToday">--</span>
+                            <span class="chevron">▾</span>
+                        </button>
+                        <div class="office-days-indicator">
+                            <div class="office-days-circle" id="officeDaysCircle">0</div>
+                            <span class="office-days-label">今週の残り出社</span>
+                        </div>
                     </div>
                 </div>
-                <div class="weather-advice-row" id="weatherAdvice"></div>
-                <div class="tomorrow-note" id="weatherTomorrow"></div>
-            </div>
 
-            <!-- 勤務形態カード -->
-            <div class="card">
-                <div class="card-label">勤務形態</div>
-                <div class="work-status-row">
-                    <button class="work-badge" id="workBadge" onclick="openWorkModal()">
-                        <svg class="icon icon-sm badge-icon" viewBox="0 0 24 24"></svg>
-                        <span id="workBadgeLabel">--</span>
-                        <span class="chevron">▾</span>
-                    </button>
-                    <div class="office-days-indicator">
-                        <div class="office-days-circle" id="officeDaysCircle">0</div>
-                        <span class="office-days-label">今週の残り出社</span>
+                <div class="day-section">
+                    <div class="garbage-row" id="garbageRowToday">
+                        <span class="event-empty">読み込み中...</span>
+                    </div>
+                </div>
+
+                <div class="day-section">
+                    <div class="event-list" id="eventsToday">
+                        <div class="event-empty">読み込み中...</div>
                     </div>
                 </div>
             </div>
 
-            <!-- ゴミの日 -->
-            <div class="card">
-                <div class="card-label">今日のゴミ</div>
-                <div class="garbage-row" id="garbageRow">
-                    <span class="event-empty" id="garbageEmpty">読み込み中...</span>
-                </div>
-                <div class="tomorrow-note" id="garbageTomorrow"></div>
-            </div>
+            <!-- 明日カード -->
+            <div class="day-card">
+                <div class="day-card-header">明日</div>
 
-            <!-- 予定・メモ -->
-            <div class="card">
-                <div class="card-label">今日の予定</div>
-                <div class="event-list" id="todayEvents">
-                    <div class="event-empty">読み込み中...</div>
+                <div class="day-section">
+                    <div class="weather-row">
+                        <svg class="icon icon-lg weather-icon" id="weatherIconTomorrow" viewBox="0 0 24 24"></svg>
+                        <div>
+                            <div class="weather-temp" id="weatherTempTomorrow">--<span class="unit">°C</span></div>
+                            <div class="weather-desc" id="weatherDescTomorrow">読み込み中...</div>
+                        </div>
+                    </div>
+                    <div class="weather-advice-row" id="weatherAdviceTomorrow"></div>
                 </div>
-            </div>
 
-            <!-- これからの予定 -->
-            <div class="card secondary-card">
-                <div class="card-label-row">
-                    <div class="card-label">これからの予定</div>
-                    <button class="card-add-btn" onclick="openDateSelectModal()" aria-label="予定を追加">＋</button>
+                <div class="day-section">
+                    <div class="work-status-row">
+                        <button class="work-badge" id="workBadgeTomorrow" onclick="openWorkModal('tomorrow')">
+                            <svg class="icon icon-sm badge-icon" viewBox="0 0 24 24"></svg>
+                            <span id="workBadgeLabelTomorrow">--</span>
+                            <span class="chevron">▾</span>
+                        </button>
+                    </div>
                 </div>
-                <div class="event-list" id="upcomingEvents">
-                    <div class="event-empty">読み込み中...</div>
+
+                <div class="day-section">
+                    <div class="garbage-row" id="garbageRowTomorrow">
+                        <span class="event-empty">読み込み中...</span>
+                    </div>
+                </div>
+
+                <div class="day-section">
+                    <div class="event-list" id="eventsTomorrow">
+                        <div class="event-empty">読み込み中...</div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -185,7 +207,7 @@
         </div>
 
         <!-- +ボタン -->
-        <button class="fab" id="fab" onclick="openAddEventModal()">
+        <button class="fab" id="fab" onclick="openDateSelectModal()">
             <svg class="icon" viewBox="0 0 24 24" fill="none">
                 <line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                 <line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
