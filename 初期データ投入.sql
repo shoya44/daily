@@ -27,9 +27,26 @@ ALTER TABLE events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE work_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can manage their own events" ON events FOR ALL USING (auth.uid() = user_id);
-CREATE POLICY "Users can manage their own work_records" ON work_records FOR ALL USING (auth.uid() = user_id);
-CREATE POLICY "Users can manage their own settings" ON settings FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage their own events"
+ON events
+FOR ALL
+TO authenticated
+USING ((select auth.uid()) = user_id)
+WITH CHECK ((select auth.uid()) = user_id);
+
+CREATE POLICY "Users can manage their own work_records"
+ON work_records
+FOR ALL
+TO authenticated
+USING ((select auth.uid()) = user_id)
+WITH CHECK ((select auth.uid()) = user_id);
+
+CREATE POLICY "Users can manage their own settings"
+ON settings
+FOR ALL
+TO authenticated
+USING ((select auth.uid()) = user_id)
+WITH CHECK ((select auth.uid()) = user_id);
 
 -- 3. 初期設定の自動投入（新規ユーザー登録時のトリガー設定）
 -- 新規ユーザー登録時にデフォルト設定を settings テーブルに作成する関数
