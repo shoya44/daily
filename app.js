@@ -408,19 +408,20 @@ async function getRemainingOfficeDaysThisWeek() {
     return count;
 }
 
-// 今週（今日〜日曜）の予定を、月キャッシュに頼らずDBから直接取得する。
-// 「今日の予定」カードと重複しないよう、呼び出し側で当日分は除外する。
-async function getThisWeekUpcomingEvents() {
+// 「これからの予定」（今日より後、直近UPCOMING_EVENTS_LIMIT件）を
+// 月キャッシュに頼らずDBから直接取得する。今日の予定は別カードで表示するため含めない。
+const UPCOMING_EVENTS_LIMIT = 5;
+
+async function getUpcomingEvents() {
     if (!db || !currentUser) return [];
-    const { sunday } = getThisWeekRange();
     const todayStr = formatDate(new Date());
     const { data } = await db
         .from('events')
         .select('*')
-        .gte('date', todayStr)
-        .lte('date', formatDate(sunday))
+        .gt('date', todayStr)
         .order('date', { ascending: true })
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: true })
+        .limit(UPCOMING_EVENTS_LIMIT);
     return data || [];
 }
 
@@ -452,10 +453,12 @@ async function fetchWeather() {
             const todayStr = formatDate(new Date());
             const index = data.daily.time.indexOf(todayStr);
             if (index !== -1) {
+                const tomorrowPrecipProb = data.daily.precipitation_probability_max[index + 1];
                 renderWeather(
                     data.daily.weathercode[index],
                     data.daily.temperature_2m_max[index],
-                    data.daily.precipitation_probability_max[index]
+                    data.daily.precipitation_probability_max[index],
+                    tomorrowPrecipProb
                 );
             }
         }
@@ -464,7 +467,7 @@ async function fetchWeather() {
     }
 }
 
-function renderWeather(weatherCode, tempMax, precipProb) {
+function renderWeather(weatherCode, tempMax, precipProb, tomorrowPrecipProb) {
     const weatherInfo = getWeatherInfo(weatherCode);
     const iconEl = document.getElementById('weatherIcon');
     iconEl.innerHTML = weatherInfo.icon;
@@ -483,6 +486,11 @@ function renderWeather(weatherCode, tempMax, precipProb) {
             <span class="dot"></span>${clothing}
         </div>
     `;
+
+    const tomorrowEl = document.getElementById('weatherTomorrow');
+    tomorrowEl.textContent = tomorrowPrecipProb === undefined
+        ? ''
+        : `明日: ${tomorrowPrecipProb >= UMBRELLA_THRESHOLD ? '傘が必要' : '傘は不要'}`;
 }
 
 function getClothingAdvice(tempMax) {
@@ -563,16 +571,17 @@ async function renderTodayScreen() {
     if (remainingOfficeDays >= 2) circle.classList.add('danger');
 
     renderGarbage(today);
+    renderGarbageTomorrow(today);
     renderEventList(eventsCache[todayStr] || [], document.getElementById('todayEvents'));
 
-    const weekEvents = await getThisWeekUpcomingEvents();
-    renderWeekEvents(weekEvents.filter(ev => ev.date !== todayStr));
+    const upcomingEvents = await getUpcomingEvents();
+    renderUpcomingEvents(upcomingEvents);
 
     fetchWeather();
 }
 
-function renderWeekEvents(events) {
-    const container = document.getElementById('weekEvents');
+function renderUpcomingEvents(events) {
+    const container = document.getElementById('upcomingEvents');
     container.innerHTML = '';
     if (events.length === 0) {
         container.innerHTML = '<div class="event-empty">予定なし</div>';
@@ -602,6 +611,14 @@ function renderGarbage(dateObj) {
     garbage.forEach(type => {
         garbageRow.innerHTML += `<div class="garbage-badge">${escapeHtml(type)}</div>`;
     });
+}
+
+function renderGarbageTomorrow(dateObj) {
+    const tomorrow = new Date(dateObj);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const garbage = getGarbageForDate(tomorrow);
+    const label = garbage.length > 0 ? garbage.map(type => escapeHtml(type)).join('・') : 'ゴミなし';
+    document.getElementById('garbageTomorrow').textContent = `明日: ${label}`;
 }
 
 function renderEventList(events, container) {
@@ -836,6 +853,37 @@ document.getElementById('newEventInput').addEventListener('keydown', (event) => 
         addEvent();
     }
 });
+
+// 「これからの予定」の＋から、当日を除く今週〜来週の日曜までの日付を選ばせる
+function openDateSelectModal() {
+    const modal = document.getElementById('dateSelectModal');
+    const optionsContainer = document.getElementById('dateSelectOptions');
+    optionsContainer.innerHTML = '';
+
+    const { monday } = getThisWeekRange();
+    const rangeEnd = new Date(monday);
+    rangeEnd.setDate(monday.getDate() + 13); // 来週の日曜まで
+
+    const days = ['日', '月', '火', '水', '木', '金', '土'];
+    const cursor = new Date();
+    cursor.setDate(cursor.getDate() + 1); // 明日から（今日はFABから追加する）
+
+    while (cursor <= rangeEnd) {
+        const dateStr = formatDate(cursor);
+        const label = `${cursor.getMonth() + 1}月${cursor.getDate()}日(${days[cursor.getDay()]})`;
+        const option = document.createElement('div');
+        option.className = 'modal-option';
+        option.textContent = label;
+        option.onclick = () => {
+            closeModal('dateSelectModal');
+            openAddEventModal(dateStr);
+        };
+        optionsContainer.appendChild(option);
+        cursor.setDate(cursor.getDate() + 1);
+    }
+
+    modal.classList.add('show');
+}
 
 function openAddEventModal(dateStr) {
     addEventTargetDate = dateStr || formatDate(new Date());

@@ -60,6 +60,7 @@
                     </div>
                 </div>
                 <div class="weather-advice-row" id="weatherAdvice"></div>
+                <div class="tomorrow-note" id="weatherTomorrow"></div>
             </div>
 
             <!-- 勤務形態カード -->
@@ -84,6 +85,7 @@
                 <div class="garbage-row" id="garbageRow">
                     <span class="event-empty" id="garbageEmpty">読み込み中...</span>
                 </div>
+                <div class="tomorrow-note" id="garbageTomorrow"></div>
             </div>
 
             <!-- 予定・メモ -->
@@ -94,10 +96,13 @@
                 </div>
             </div>
 
-            <!-- 今週の残り予定 -->
+            <!-- これからの予定 -->
             <div class="card secondary-card">
-                <div class="card-label">今週の予定</div>
-                <div class="event-list" id="weekEvents">
+                <div class="card-label-row">
+                    <div class="card-label">これからの予定</div>
+                    <button class="card-add-btn" onclick="openDateSelectModal()" aria-label="予定を追加">＋</button>
+                </div>
+                <div class="event-list" id="upcomingEvents">
                     <div class="event-empty">読み込み中...</div>
                 </div>
             </div>
@@ -248,6 +253,15 @@
                 <input type="number" id="weatherLonInput" class="modal-input" placeholder="経度（例：139.76）" step="0.01" autocomplete="off">
             </div>
             <button class="modal-submit" onclick="saveWeatherLocation()">保存</button>
+        </div>
+    </div>
+
+    <!-- 予定追加日付選択モーダル -->
+    <div class="modal-overlay" id="dateSelectModal">
+        <div class="modal-sheet">
+            <div class="modal-handle"></div>
+            <div class="modal-title">日付を選択</div>
+            <div id="dateSelectOptions" class="modal-options-scroll"></div>
         </div>
     </div>
 
