@@ -110,7 +110,7 @@ async function showMainApp() {
     await loadSettings();
     await loadCurrentMonthData();
     renderCalendar();
-    renderTodayScreen();
+    await renderTodayScreen();
     switchTab('screen-today', document.querySelector('.tab.active'));
 }
 
@@ -163,7 +163,7 @@ async function handleLogout() {
 // ========================================
 async function loadSettings() {
     if (!db || !currentUser) return;
-    const { data, error } = await db.from('settings').select('data').single();
+    const { data, error } = await db.from('settings').select('data').eq('user_id', currentUser.id).single();
     if (error || !data) {
         settings = getDefaultSettings();
     } else {
@@ -194,14 +194,15 @@ async function saveSettings() {
 
     const { error } = await db.from('settings').update({ data: settings }).eq('user_id', currentUser.id);
     if (error) {
-        showToast('設定の保存に失敗しました');
+        showToast('設定の保存に失敗しました（通信状態をご確認ください）');
     }
 }
 
 async function loadCurrentMonthData() {
     if (!db || !currentUser) return;
     const startDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-01`;
-    const endDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-31`;
+    const lastDate = new Date(currentYear, currentMonth + 1, 0).getDate();
+    const endDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(lastDate).padStart(2, '0')}`;
 
     const { data: events } = await db
         .from('events')
@@ -236,7 +237,7 @@ async function addEventToDb(dateStr, text) {
     if (!db || !checkOnline()) return null;
     const { data, error } = await db.from('events').insert([{ date: dateStr, text }]).select().single();
     if (error) {
-        showToast('予定の追加に失敗しました');
+        showToast('予定の追加に失敗しました（通信状態をご確認ください）');
         return null;
     }
     if (!eventsCache[dateStr]) eventsCache[dateStr] = [];
@@ -248,7 +249,7 @@ async function deleteEventFromDb(eventId, dateStr) {
     if (!db || !checkOnline()) return false;
     const { error } = await db.from('events').delete().eq('id', eventId);
     if (error) {
-        showToast('予定の削除に失敗しました');
+        showToast('予定の削除に失敗しました（通信状態をご確認ください）');
         return false;
     }
     if (eventsCache[dateStr]) {
@@ -265,10 +266,15 @@ async function saveWorkRecord(dateStr, status) {
         .eq('date', dateStr)
         .single();
 
+    let error;
     if (existing) {
-        await db.from('work_records').update({ status, updated_at: new Date().toISOString() }).eq('id', existing.id);
+        ({ error } = await db.from('work_records').update({ status, updated_at: new Date().toISOString() }).eq('id', existing.id));
     } else {
-        await db.from('work_records').insert([{ date: dateStr, status }]);
+        ({ error } = await db.from('work_records').insert([{ date: dateStr, status }]));
+    }
+    if (error) {
+        showToast('勤務形態の保存に失敗しました（通信状態をご確認ください）');
+        return;
     }
     workRecordsCache[dateStr] = status;
 }
@@ -276,9 +282,9 @@ async function saveWorkRecord(dateStr, status) {
 // ========================================
 // ロジック・判定関数
 // ========================================
-function getWorkStatus(dateObj) {
+function resolveWorkStatus(dateObj, recordsMap) {
     const dateStr = formatDate(dateObj);
-    if (workRecordsCache[dateStr]) return workRecordsCache[dateStr];
+    if (recordsMap[dateStr]) return recordsMap[dateStr];
     if (HOLIDAYS[dateStr]) return 'off';
     if (settings?.workDefaults) {
         const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -287,21 +293,46 @@ function getWorkStatus(dateObj) {
     return 'remote';
 }
 
+function getWorkStatus(dateObj) {
+    return resolveWorkStatus(dateObj, workRecordsCache);
+}
+
 function getWorkStatusLabel(status) {
     return WORK_STATUSES[status]?.label || status;
 }
 
-function getOfficeDaysThisWeek() {
+function getThisWeekRange() {
     const today = new Date();
     const diffToMonday = (today.getDay() - WEEK_START_DAY + 7) % 7;
     const monday = new Date(today);
     monday.setDate(today.getDate() - diffToMonday);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    return { monday, sunday };
+}
+
+// 今週が月をまたぐ場合でも work_records を正しく反映するため、
+// 月キャッシュ（workRecordsCache）に頼らず今週分をDBから個別取得する。
+async function getOfficeDaysThisWeek() {
+    const { monday, sunday } = getThisWeekRange();
+    let weekRecords = {};
+
+    if (db && currentUser) {
+        const { data: records } = await db
+            .from('work_records')
+            .select('date, status')
+            .gte('date', formatDate(monday))
+            .lte('date', formatDate(sunday));
+        if (records) {
+            records.forEach(r => { weekRecords[r.date] = r.status; });
+        }
+    }
 
     let count = 0;
     for (let i = 0; i < 7; i++) {
         const date = new Date(monday);
         date.setDate(monday.getDate() + i);
-        const status = getWorkStatus(date);
+        const status = resolveWorkStatus(date, weekRecords);
         if (status === 'office' || status === 'holiday_work') count++;
     }
     return count;
@@ -401,7 +432,7 @@ function getWorkStatusIcon(status) {
 // ========================================
 // 画面描画
 // ========================================
-function renderTodayScreen() {
+async function renderTodayScreen() {
     const today = new Date();
     const todayStr = formatDate(today);
 
@@ -411,7 +442,7 @@ function renderTodayScreen() {
     document.getElementById('workBadge').querySelector('.badge-icon').outerHTML = getWorkStatusIcon(status);
 
     // 出社日数
-    const officeDays = getOfficeDaysThisWeek();
+    const officeDays = await getOfficeDaysThisWeek();
     const circle = document.getElementById('officeDaysCircle');
     circle.textContent = officeDays;
     circle.className = 'office-days-circle';
@@ -432,7 +463,7 @@ function renderGarbage(dateObj) {
         return;
     }
     garbage.forEach(type => {
-        garbageRow.innerHTML += `<div class="garbage-badge">${type}</div>`;
+        garbageRow.innerHTML += `<div class="garbage-badge">${escapeHtml(type)}</div>`;
     });
 }
 
@@ -492,10 +523,21 @@ function renderCalendar() {
         if (dateStr === todayStr) btn.classList.add('today');
 
         const hasEvents = eventsCache[dateStr]?.length > 0;
-        if (hasEvents) {
-            const dot = document.createElement('span');
-            dot.className = 'dot';
-            btn.appendChild(dot);
+        const hasWorkOverride = !!workRecordsCache[dateStr];
+        if (hasEvents || hasWorkOverride) {
+            const dots = document.createElement('span');
+            dots.className = 'dots';
+            if (hasEvents) {
+                const dot = document.createElement('span');
+                dot.className = 'dot dot-event';
+                dots.appendChild(dot);
+            }
+            if (hasWorkOverride) {
+                const dot = document.createElement('span');
+                dot.className = 'dot dot-work';
+                dots.appendChild(dot);
+            }
+            btn.appendChild(dots);
         }
 
         if (dateObj.toDateString() === selectedDate.toDateString()) btn.classList.add('selected');
@@ -567,7 +609,7 @@ function renderSettingsScreen() {
             const weeksStr = item.weeks.length > 0 ? `第${item.weeks.join('・第')}` : '';
             garbageContainer.innerHTML += `
                 <div class="settings-item">
-                    <span class="settings-item-label">${item.type}</span>
+                    <span class="settings-item-label">${escapeHtml(item.type)}</span>
                     <span class="settings-item-value">${weekdaysStr}${weeksStr ? '（' + weeksStr + '）' : ''}</span>
                 </div>
             `;
