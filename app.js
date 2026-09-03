@@ -158,6 +158,23 @@ async function handleLogout() {
     await db.auth.signOut();
 }
 
+// Service Workerのキャッシュを破棄して最新版を強制取得する
+async function forceUpdateApp() {
+    showToast('最新版を確認しています…');
+    try {
+        if ('serviceWorker' in navigator) {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(registrations.map(reg => reg.unregister()));
+        }
+        if ('caches' in window) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map(key => caches.delete(key)));
+        }
+    } finally {
+        location.reload();
+    }
+}
+
 // ========================================
 // Supabase データ操作
 // ========================================
