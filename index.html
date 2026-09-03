@@ -73,7 +73,7 @@
                     </button>
                     <div class="office-days-indicator">
                         <div class="office-days-circle" id="officeDaysCircle">0</div>
-                        <span class="office-days-label">今週の出社</span>
+                        <span class="office-days-label">今週の残り出社</span>
                     </div>
                 </div>
             </div>
@@ -90,6 +90,14 @@
             <div class="card">
                 <div class="card-label">今日の予定</div>
                 <div class="event-list" id="todayEvents">
+                    <div class="event-empty">読み込み中...</div>
+                </div>
+            </div>
+
+            <!-- 今週の残り予定 -->
+            <div class="card">
+                <div class="card-label">今週の残り予定</div>
+                <div class="event-list" id="weekEvents">
                     <div class="event-empty">読み込み中...</div>
                 </div>
             </div>
@@ -122,6 +130,7 @@
                         <option value="holiday_work">休日出勤</option>
                     </select>
                 </div>
+                <div class="selected-date-garbage" id="selectedDateGarbage"></div>
                 <div class="event-list" id="selectedDateEvents">
                     <div class="event-empty">予定なし</div>
                 </div>
@@ -242,15 +251,16 @@
         </div>
     </div>
 
-    <!-- 削除確認モーダル -->
-    <div class="modal-overlay" id="deleteConfirmModal">
+    <!-- 予定編集モーダル -->
+    <div class="modal-overlay" id="editEventModal">
         <div class="modal-sheet">
             <div class="modal-handle"></div>
-            <div class="modal-title">この予定を削除しますか？</div>
-            <p class="modal-text" id="deleteEventText"></p>
-            <div class="modal-button-row">
+            <div class="modal-title">予定を編集</div>
+            <input type="text" id="editEventInput" class="modal-input" placeholder="予定やメモを入力..." autocomplete="off">
+            <button class="modal-submit" onclick="saveEditEvent()">保存</button>
+            <div class="modal-button-row" style="margin-top: 8px;">
                 <button class="modal-submit danger" onclick="confirmDeleteEvent()">削除</button>
-                <button class="modal-submit" onclick="closeDeleteConfirmModal()">キャンセル</button>
+                <button class="modal-submit" onclick="closeEditEventModal()">キャンセル</button>
             </div>
         </div>
     </div>
