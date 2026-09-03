@@ -67,6 +67,7 @@ let currentYear = new Date().getFullYear();
 let currentMonth = new Date().getMonth();
 let deleteEventId = null;
 let editingWorkDefaultDay = null;
+let addEventTargetDate = null;
 
 // ========================================
 // 初期化・認証監視
@@ -695,7 +696,18 @@ function selectWorkOption(status) {
     renderCalendar();
 }
 
-function openAddEventModal() {
+function openAddEventModal(dateStr) {
+    addEventTargetDate = dateStr || formatDate(new Date());
+
+    const [y, m, d] = addEventTargetDate.split('-').map(Number);
+    const dateObj = new Date(y, m - 1, d);
+    const days = ['日', '月', '火', '水', '木', '金', '土'];
+    const todayStr = formatDate(new Date());
+    document.getElementById('addEventModalTitle').textContent =
+        addEventTargetDate === todayStr
+            ? '予定を追加'
+            : `${m}月${d}日(${days[dateObj.getDay()]})の予定を追加`;
+
     document.getElementById('addEventModal').classList.add('show');
     document.getElementById('newEventInput').value = '';
     document.getElementById('newEventInput').focus();
@@ -706,7 +718,8 @@ async function addEvent() {
     const text = input.value.trim();
     if (!text) return;
 
-    await addEventToDb(formatDate(new Date()), text);
+    const dateStr = addEventTargetDate || formatDate(new Date());
+    await addEventToDb(dateStr, text);
     closeModal('addEventModal');
     renderTodayScreen();
     renderCalendar();
