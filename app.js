@@ -82,10 +82,15 @@ async function init() {
     db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     // 認証状態の変更検知
+    // TOKEN_REFRESHEDはトークンの自動更新のみを表し、画面やデータは変わらない。
+    // ここでshowMainApp()を呼ぶと、PWAのバックグラウンド復帰等で頻発するリフレッシュのたびに
+    // 全データを再取得・全画面を再描画してしまい、その瞬間の通信不調がそのままエラー表示になる。
     db.auth.onAuthStateChange((event, session) => {
         if (session) {
             currentUser = session.user;
-            showMainApp();
+            if (event !== 'TOKEN_REFRESHED') {
+                showMainApp();
+            }
         } else {
             currentUser = null;
             showAuthScreen();
