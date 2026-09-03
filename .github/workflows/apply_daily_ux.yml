@@ -1,0 +1,293 @@
+name: Apply Daily UX safety improvements
+
+on:
+  push:
+    branches:
+      - feature/daily-ux-safety-code
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch application files
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              s = p.read_text(encoding='utf-8')
+              count = s.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly 1 match, got {count}')
+              p.write_text(s.replace(old, new), encoding='utf-8')
+
+          # app.js: initialization error handling
+          replace_once('app.js', '''async function showMainApp() {
+              document.getElementById('screen-auth').classList.remove('active');
+              document.getElementById('main-app').style.display = 'block';
+
+              updateHeaderDate();
+              await loadSettings();
+              await loadCurrentMonthData();
+              renderCalendar();
+              await renderTodayScreen();
+              switchTab('screen-today', document.querySelector('.tab.active'));
+          }''', '''async function showMainApp() {
+              document.getElementById('screen-auth').classList.remove('active');
+              document.getElementById('main-app').style.display = 'block';
+
+              updateHeaderDate();
+
+              try {
+                  await loadSettings();
+                  await loadCurrentMonthData();
+                  renderCalendar();
+                  await renderTodayScreen();
+                  switchTab('screen-today', document.querySelector('.tab.active'));
+              } catch (error) {
+                  console.error('App initialization error:', error);
+                  showToast('データを読み込めませんでした。通信状態をご確認ください。');
+              }
+          }''')
+
+          # app.js: distinguish missing settings from DB errors
+          replace_once('app.js', '''async function loadSettings() {
+              if (!db || !currentUser) return;
+              const { data, error } = await db.from('settings').select('data').eq('user_id', currentUser.id).single();
+              if (error || !data) {
+                  settings = getDefaultSettings();
+              } else {
+                  settings = data.data || getDefaultSettings();
+              }
+              renderSettingsScreen();
+          }''', '''async function loadSettings() {
+              if (!db || !currentUser) return;
+
+              const { data, error } = await db
+                  .from('settings')
+                  .select('data')
+                  .eq('user_id', currentUser.id)
+                  .maybeSingle();
+
+              if (error) {
+                  console.error('Settings load error:', error);
+                  throw new Error('設定の読み込みに失敗しました');
+              }
+
+              if (!data) {
+                  settings = getDefaultSettings();
+              } else {
+                  settings = data.data || getDefaultSettings();
+              }
+
+              renderSettingsScreen();
+          }''')
+
+          # app.js: actionable weather advice
+          replace_once('app.js', "${needUmbrella ? '傘必要' : '傘不要'}", "${needUmbrella ? '傘を持っていく' : '傘は不要'}")
+
+          # app.js: save feedback
+          replace_once('app.js', '''    if (!eventsCache[dateStr]) eventsCache[dateStr] = [];
+              eventsCache[dateStr].push(data);
+              return data;''', '''    if (!eventsCache[dateStr]) eventsCache[dateStr] = [];
+              eventsCache[dateStr].push(data);
+              showToast('予定を追加しました');
+              return data;''')
+
+          replace_once('app.js', '''    if (eventsCache[dateStr]) {
+                  const idx = eventsCache[dateStr].findIndex(ev => ev.id === eventId);
+                  if (idx !== -1) eventsCache[dateStr][idx] = data;
+              }
+              return true;''', '''    if (eventsCache[dateStr]) {
+                  const idx = eventsCache[dateStr].findIndex(ev => ev.id === eventId);
+                  if (idx !== -1) eventsCache[dateStr][idx] = data;
+              }
+              showToast('予定を更新しました');
+              return true;''')
+
+          # app.js: reliable work-record save result
+          replace_once('app.js', '''async function saveWorkRecord(dateStr, status) {
+              if (!db || !checkOnline()) return;
+              const { data: existing } = await db
+                  .from('work_records')
+                  .select('id')
+                  .eq('date', dateStr)
+                  .single();
+
+              let error;
+              if (existing) {
+                  ({ error } = await db.from('work_records').update({ status, updated_at: new Date().toISOString() }).eq('id', existing.id));
+              } else {
+                  ({ error } = await db.from('work_records').insert([{ date: dateStr, status }]));
+              }
+              if (error) {
+                  showToast('勤務形態の保存に失敗しました（通信状態をご確認ください）');
+                  return;
+              }
+              workRecordsCache[dateStr] = status;
+          }''', '''async function saveWorkRecord(dateStr, status) {
+              if (!db || !checkOnline()) return false;
+
+              const { data: existing } = await db
+                  .from('work_records')
+                  .select('id')
+                  .eq('date', dateStr)
+                  .single();
+
+              let error;
+              if (existing) {
+                  ({ error } = await db
+                      .from('work_records')
+                      .update({ status, updated_at: new Date().toISOString() })
+                      .eq('id', existing.id));
+              } else {
+                  ({ error } = await db
+                      .from('work_records')
+                      .insert([{ date: dateStr, status }]));
+              }
+
+              if (error) {
+                  showToast('勤務形態の保存に失敗しました（通信状態をご確認ください）');
+                  return false;
+              }
+
+              workRecordsCache[dateStr] = status;
+              return true;
+          }''')
+
+          replace_once('app.js', '''function selectWorkOption(status) {
+              saveWorkRecord(formatDate(new Date()), status);
+              closeModal('workModal');
+              renderTodayScreen();
+              renderCalendar();
+          }''', '''async function selectWorkOption(status) {
+              const saved = await saveWorkRecord(formatDate(new Date()), status);
+              if (!saved) return;
+
+              closeModal('workModal');
+              renderTodayScreen();
+              renderCalendar();
+              showToast(`${getWorkStatusLabel(status)}に変更しました`);
+          }''')
+
+          replace_once('app.js', '''async function addEvent() {
+              const input = document.getElementById('newEventInput');
+              const text = input.value.trim();
+              if (!text) return;
+
+              const dateStr = addEventTargetDate || formatDate(new Date());
+              await addEventToDb(dateStr, text);
+              closeModal('addEventModal');
+              renderTodayScreen();
+              renderCalendar();
+          }''', '''async function addEvent() {
+              const input = document.getElementById('newEventInput');
+              const text = input.value.trim();
+              if (!text) return;
+
+              const dateStr = addEventTargetDate || formatDate(new Date());
+              const saved = await addEventToDb(dateStr, text);
+              if (!saved) return;
+
+              closeModal('addEventModal');
+              renderTodayScreen();
+              renderCalendar();
+          }''')
+
+          replace_once('app.js', '''async function confirmDeleteEvent() {
+              if (!editingEventId) return;
+              await deleteEventFromDb(editingEventId, editingEventDate);
+              editingEventId = null;
+              editingEventDate = null;
+              closeModal('editEventModal');
+              renderTodayScreen();
+              renderCalendar();
+          }''', '''async function confirmDeleteEvent() {
+              if (!editingEventId) return;
+
+              const deleted = await deleteEventFromDb(editingEventId, editingEventDate);
+              if (!deleted) return;
+
+              editingEventId = null;
+              editingEventDate = null;
+              closeModal('editEventModal');
+              renderTodayScreen();
+              renderCalendar();
+              showToast('予定を削除しました');
+          }''')
+
+          # app.js: Enter submits the add-event modal
+          replace_once('app.js', "document.querySelectorAll('.modal-overlay').forEach(overlay => {", """document.getElementById('newEventInput').addEventListener('keydown', (event) => {
+              if (event.key === 'Enter') {
+                  event.preventDefault();
+                  addEvent();
+              }
+          });
+
+          document.querySelectorAll('.modal-overlay').forEach(overlay => {""")
+
+          # index.html: Today wording and secondary card
+          replace_once('index.html', '<div class="card-label">今日の天気</div>', '<div class="card-label">今日どうする？</div>')
+          replace_once('index.html', '<div class="office-days-indicator">\n                        <div class="office-days-circle" id="officeDaysCircle">0</div>\n                        <span class="office-days-label">今週の残り出社</span>\n                    </div>', '<div class="office-days-indicator">\n                        <div class="office-days-circle" id="officeDaysCircle">0</div>\n                        <span class="office-days-label">今週あと<br>出社</span>\n                    </div>')
+          replace_once('index.html', '<div class="card-label">今週の残り予定</div>', '<div class="card-label">今週の予定</div>')
+          replace_once('index.html', '<div class="card">\n                <div class="card-label">今週の予定</div>', '<div class="card secondary-card">\n                <div class="card-label">今週の予定</div>')
+          replace_once('index.html', 'placeholder="予定やメモを入力..."', 'placeholder="何する？"')
+          replace_once('index.html', '<div class="settings-group-title">勤務形態のデフォルト</div>', '<div class="settings-group-title">勤務</div>')
+          replace_once('index.html', '<div class="settings-group-title">アプリ情報</div>', '<div class="settings-group-title">アプリ</div>')
+
+          # style.css: reduce visual/scroll density and emphasize actionable items
+          replace_once('style.css', '''    padding: 18px 20px;
+    margin-bottom: 10px;''', '''    padding: 16px 18px;
+    margin-bottom: 8px;''')
+          replace_once('style.css', '''    background: rgba(240, 246, 252, 0.03);
+    border: 1px solid rgba(240, 246, 252, 0.05);
+    border-radius: 7px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 500;''', '''    background: rgba(163, 113, 247, 0.08);
+    border: 1px solid rgba(163, 113, 247, 0.2);
+    border-radius: 9px;
+    padding: 9px 14px;
+    font-size: 14px;
+    font-weight: 600;''')
+          replace_once('style.css', '''.event-empty { color: var(--text-muted); font-size: 13px; padding: 8px 0; font-weight: 450; }''', '''.event-empty { color: var(--text-muted); font-size: 12px; padding: 6px 0; font-weight: 450; }''')
+          p = Path('style.css')
+          s = p.read_text(encoding='utf-8')
+          marker = '.event-empty { color: var(--text-muted); font-size: 12px; padding: 6px 0; font-weight: 450; }'
+          if '.secondary-card {' not in s:
+              s = s.replace(marker, marker + '\n.secondary-card { opacity: 0.9; }')
+          p.write_text(s, encoding='utf-8')
+
+          # Basic syntax sanity checks
+          app = Path('app.js').read_text(encoding='utf-8')
+          assert 'async function showMainApp()' in app
+          assert 'maybeSingle()' in app
+          assert '傘を持っていく' in app
+          assert "showToast('予定を追加しました')" in app
+          assert 'async function selectWorkOption' in app
+          assert "event.key === 'Enter'" in app
+          assert 'secondary-card' in Path('style.css').read_text(encoding='utf-8')
+
+      - name: Commit changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f .github/workflows/apply_daily_ux.yml
+          git add app.js index.html style.css .github/workflows/apply_daily_ux.yml
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "feat: apply Daily UX and safety improvements [skip ci]"
+          git push
