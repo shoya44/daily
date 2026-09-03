@@ -109,29 +109,44 @@ function showAuthScreen() {
     document.getElementById('main-app').style.display = 'none';
 }
 
+// 1箇所の失敗を握りつぶして他の初期化ステップに影響させないためのヘルパー。
+// showMainApp()の各ステップはこれを介して呼び、一部のデータ取得や描画が
+// 失敗しても、他のセクションは可能な限り表示され続けるようにする。
+async function safeStep(fn, errorLabel) {
+    try {
+        return await fn();
+    } catch (error) {
+        console.error(`${errorLabel} error:`, error);
+        return undefined;
+    }
+}
+
 async function showMainApp() {
     document.getElementById('screen-auth').classList.remove('active');
     document.getElementById('main-app').style.display = 'block';
 
     updateHeaderDate();
 
-    try {
-        // バックグラウンド復帰直後は保持中のaccess_tokenが期限切れ間際のことがあり、
-        // そのままDBクエリを投げると401で失敗する。getSession()は期限が近い場合に
-        // 自動でトークンをリフレッシュしてから返すため、先に呼んで確実に有効な
-        // トークンでその後のクエリを実行できるようにする。
+    // バックグラウンド復帰直後は保持中のaccess_tokenが期限切れ間際のことがあり、
+    // そのままDBクエリを投げると401で失敗する。getSession()は期限が近い場合に
+    // 自動でトークンをリフレッシュしてから返すため、先に呼んで確実に有効な
+    // トークンでその後のクエリを実行できるようにする。
+    await safeStep(async () => {
         const { data: { session } } = await db.auth.getSession();
         if (session) currentUser = session.user;
+    }, 'getSession');
 
-        await loadSettings();
-        await loadCurrentMonthData();
-        renderCalendar();
-        await renderTodayScreen();
-        switchTab('screen-today', document.querySelector('.tab.active'));
-    } catch (error) {
-        console.error('App initialization error:', error);
-        showToast('データを読み込めませんでした。通信状態をご確認ください。');
-    }
+    const settingsOk = await safeStep(async () => { await loadSettings(); return true; }, 'loadSettings');
+    if (!settingsOk) showToast('設定の読み込みに失敗しました（通信状態をご確認ください）');
+
+    const monthDataOk = await safeStep(async () => { await loadCurrentMonthData(); return true; }, 'loadCurrentMonthData');
+    if (!monthDataOk) showToast('予定・勤務データの読み込みに失敗しました（通信状態をご確認ください）');
+
+    await safeStep(() => renderCalendar(), 'renderCalendar');
+    await safeStep(() => renderTodayScreen(), 'renderTodayScreen');
+
+    const activeTab = document.querySelector('.tab.active') || document.querySelector('.tab[data-screen="screen-today"]');
+    switchTab('screen-today', activeTab);
 }
 
 // ========================================
@@ -464,20 +479,27 @@ async function fetchWeather() {
             }
         }
     } catch (error) {
-        document.getElementById('weatherDescToday').textContent = '天気情報オフライン';
-        document.getElementById('weatherDescTomorrow').textContent = '天気情報オフライン';
+        const todayDesc = document.getElementById('weatherDescToday');
+        const tomorrowDesc = document.getElementById('weatherDescTomorrow');
+        if (todayDesc) todayDesc.textContent = '天気情報オフライン';
+        if (tomorrowDesc) tomorrowDesc.textContent = '天気情報オフライン';
     }
 }
 
 function renderDayWeather(suffix, weatherCode, tempMax, precipProb) {
     const weatherInfo = getWeatherInfo(weatherCode);
     const iconEl = document.getElementById(`weatherIcon${suffix}`);
-    iconEl.innerHTML = weatherInfo.icon;
-    iconEl.style.color = weatherInfo.color;
-    document.getElementById(`weatherTemp${suffix}`).innerHTML = `${Math.round(tempMax)}<span class="unit">°C</span>`;
-    document.getElementById(`weatherDesc${suffix}`).textContent = weatherInfo.label;
+    if (iconEl) {
+        iconEl.innerHTML = weatherInfo.icon;
+        iconEl.style.color = weatherInfo.color;
+    }
+    const tempEl = document.getElementById(`weatherTemp${suffix}`);
+    if (tempEl) tempEl.innerHTML = `${Math.round(tempMax)}<span class="unit">°C</span>`;
+    const descEl = document.getElementById(`weatherDesc${suffix}`);
+    if (descEl) descEl.textContent = weatherInfo.label;
 
     const adviceRow = document.getElementById(`weatherAdvice${suffix}`);
+    if (!adviceRow) return;
     const needUmbrella = precipProb >= UMBRELLA_THRESHOLD;
     const clothing = getClothingAdvice(tempMax);
     adviceRow.innerHTML = `
@@ -550,6 +572,9 @@ function getWorkStatusIcon(status) {
 // ========================================
 // 画面描画
 // ========================================
+// 今日・明日カードの各セクション（勤務/出社日数/ゴミ/予定/天気）は互いに独立した
+// 情報なので、個別にsafeStepで保護する。1セクションのDOM操作や通信が失敗しても、
+// 他のセクションは表示され続ける。
 async function renderTodayScreen() {
     const today = new Date();
     const tomorrow = new Date(today);
@@ -557,35 +582,45 @@ async function renderTodayScreen() {
     const todayStr = formatDate(today);
     const tomorrowStr = formatDate(tomorrow);
 
-    renderDayWork('Today', today);
-    renderDayWork('Tomorrow', tomorrow);
+    await safeStep(() => renderDayWork('Today', today), 'renderDayWork(Today)');
+    await safeStep(() => renderDayWork('Tomorrow', tomorrow), 'renderDayWork(Tomorrow)');
 
     // 今週の残り出社日数（少ないほど良い＝緑、多いほど注意＝赤）。今日カードのみ表示。
-    const remainingOfficeDays = await getRemainingOfficeDaysThisWeek();
-    const circle = document.getElementById('officeDaysCircle');
-    circle.textContent = remainingOfficeDays;
-    circle.className = 'office-days-circle';
-    if (remainingOfficeDays === 1) circle.classList.add('warning');
-    if (remainingOfficeDays >= 2) circle.classList.add('danger');
+    await safeStep(async () => {
+        const remainingOfficeDays = await getRemainingOfficeDaysThisWeek();
+        const circle = document.getElementById('officeDaysCircle');
+        if (!circle) return;
+        circle.textContent = remainingOfficeDays;
+        circle.className = 'office-days-circle';
+        if (remainingOfficeDays === 1) circle.classList.add('warning');
+        if (remainingOfficeDays >= 2) circle.classList.add('danger');
+    }, 'officeDaysCircle');
 
-    renderDayGarbage('Today', today);
-    renderDayGarbage('Tomorrow', tomorrow);
+    await safeStep(() => renderDayGarbage('Today', today), 'renderDayGarbage(Today)');
+    await safeStep(() => renderDayGarbage('Tomorrow', tomorrow), 'renderDayGarbage(Tomorrow)');
 
-    renderEventList(eventsCache[todayStr] || [], document.getElementById('eventsToday'));
-    const tomorrowEvents = await getEventsForDate(tomorrowStr);
-    renderEventList(tomorrowEvents, document.getElementById('eventsTomorrow'));
+    await safeStep(() => {
+        renderEventList(eventsCache[todayStr] || [], document.getElementById('eventsToday'));
+    }, 'renderEventList(Today)');
+    await safeStep(async () => {
+        const tomorrowEvents = await getEventsForDate(tomorrowStr);
+        renderEventList(tomorrowEvents, document.getElementById('eventsTomorrow'));
+    }, 'renderEventList(Tomorrow)');
 
     fetchWeather();
 }
 
 function renderDayWork(suffix, dateObj) {
     const status = getWorkStatus(dateObj);
-    document.getElementById(`workBadgeLabel${suffix}`).textContent = getWorkStatusLabel(status);
-    document.getElementById(`workBadge${suffix}`).querySelector('.badge-icon').outerHTML = getWorkStatusIcon(status);
+    const labelEl = document.getElementById(`workBadgeLabel${suffix}`);
+    if (labelEl) labelEl.textContent = getWorkStatusLabel(status);
+    const iconEl = document.getElementById(`workBadge${suffix}`)?.querySelector('.badge-icon');
+    if (iconEl) iconEl.outerHTML = getWorkStatusIcon(status);
 }
 
 function renderDayGarbage(suffix, dateObj) {
     const garbageRow = document.getElementById(`garbageRow${suffix}`);
+    if (!garbageRow) return;
     const garbage = getGarbageForDate(dateObj);
     garbageRow.innerHTML = '';
     if (garbage.length === 0) {
@@ -598,6 +633,7 @@ function renderDayGarbage(suffix, dateObj) {
 }
 
 function renderEventList(events, container) {
+    if (!container) return;
     container.innerHTML = '';
     if (events.length === 0) {
         container.innerHTML = '<div class="event-empty">予定なし</div>';
@@ -769,10 +805,15 @@ function renderSettingsScreen() {
 // ========================================
 function switchTab(screenId, tabEl) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    document.getElementById(screenId).classList.add('active');
+    const screenEl = document.getElementById(screenId);
+    if (screenEl) screenEl.classList.add('active');
+
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    tabEl.classList.add('active');
-    document.getElementById('fab').style.display = screenId === 'screen-today' ? 'flex' : 'none';
+    const targetTab = tabEl || document.querySelector(`.tab[data-screen="${screenId}"]`);
+    if (targetTab) targetTab.classList.add('active');
+
+    const fab = document.getElementById('fab');
+    if (fab) fab.style.display = screenId === 'screen-today' ? 'flex' : 'none';
 }
 
 function selectCalendarDay(dateObj) {
