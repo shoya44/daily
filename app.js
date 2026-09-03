@@ -121,7 +121,23 @@ async function safeStep(fn, errorLabel) {
     }
 }
 
+// onAuthStateChangeはINITIAL_SESSION/SIGNED_IN等が短時間に複数回発火することがあり、
+// その度にshowMainApp()が並行して走ると、renderCalendar()等のDOM再構築処理が競合し、
+// 存在するはずの要素へのアクセスで例外が発生することがある。多重実行を防ぐためのフラグ。
+let isShowingMainApp = false;
+
 async function showMainApp() {
+    if (isShowingMainApp) return;
+    isShowingMainApp = true;
+
+    try {
+        await showMainAppInner();
+    } finally {
+        isShowingMainApp = false;
+    }
+}
+
+async function showMainAppInner() {
     document.getElementById('screen-auth').classList.remove('active');
     document.getElementById('main-app').style.display = 'block';
 
