@@ -408,20 +408,15 @@ async function getRemainingOfficeDaysThisWeek() {
     return count;
 }
 
-// 「これからの予定」（今日より後、直近UPCOMING_EVENTS_LIMIT件）を
-// 月キャッシュに頼らずDBから直接取得する。今日の予定は別カードで表示するため含めない。
-const UPCOMING_EVENTS_LIMIT = 5;
-
-async function getUpcomingEvents() {
+// 明日の予定は月キャッシュ（当月のみロード）に頼ると月またぎで欠落するため、
+// 対象日1日分をDBから直接取得する。
+async function getEventsForDate(dateStr) {
     if (!db || !currentUser) return [];
-    const todayStr = formatDate(new Date());
     const { data } = await db
         .from('events')
         .select('*')
-        .gt('date', todayStr)
-        .order('date', { ascending: true })
-        .order('created_at', { ascending: true })
-        .limit(UPCOMING_EVENTS_LIMIT);
+        .eq('date', dateStr)
+        .order('created_at', { ascending: true });
     return data || [];
 }
 
@@ -453,29 +448,29 @@ async function fetchWeather() {
             const todayStr = formatDate(new Date());
             const index = data.daily.time.indexOf(todayStr);
             if (index !== -1) {
-                const tomorrowPrecipProb = data.daily.precipitation_probability_max[index + 1];
-                renderWeather(
-                    data.daily.weathercode[index],
-                    data.daily.temperature_2m_max[index],
-                    data.daily.precipitation_probability_max[index],
-                    tomorrowPrecipProb
-                );
+                renderDayWeather('Today', data.daily.weathercode[index], data.daily.temperature_2m_max[index], data.daily.precipitation_probability_max[index]);
+            }
+            if (index !== -1 && index + 1 < data.daily.time.length) {
+                renderDayWeather('Tomorrow', data.daily.weathercode[index + 1], data.daily.temperature_2m_max[index + 1], data.daily.precipitation_probability_max[index + 1]);
+            } else {
+                document.getElementById('weatherDescTomorrow').textContent = '取得できませんでした';
             }
         }
     } catch (error) {
-        document.getElementById('weatherDesc').textContent = '天気情報オフライン';
+        document.getElementById('weatherDescToday').textContent = '天気情報オフライン';
+        document.getElementById('weatherDescTomorrow').textContent = '天気情報オフライン';
     }
 }
 
-function renderWeather(weatherCode, tempMax, precipProb, tomorrowPrecipProb) {
+function renderDayWeather(suffix, weatherCode, tempMax, precipProb) {
     const weatherInfo = getWeatherInfo(weatherCode);
-    const iconEl = document.getElementById('weatherIcon');
+    const iconEl = document.getElementById(`weatherIcon${suffix}`);
     iconEl.innerHTML = weatherInfo.icon;
     iconEl.style.color = weatherInfo.color;
-    document.getElementById('weatherTemp').innerHTML = `${Math.round(tempMax)}<span class="unit">°C</span>`;
-    document.getElementById('weatherDesc').textContent = weatherInfo.label;
+    document.getElementById(`weatherTemp${suffix}`).innerHTML = `${Math.round(tempMax)}<span class="unit">°C</span>`;
+    document.getElementById(`weatherDesc${suffix}`).textContent = weatherInfo.label;
 
-    const adviceRow = document.getElementById('weatherAdvice');
+    const adviceRow = document.getElementById(`weatherAdvice${suffix}`);
     const needUmbrella = precipProb >= UMBRELLA_THRESHOLD;
     const clothing = getClothingAdvice(tempMax);
     adviceRow.innerHTML = `
@@ -486,11 +481,6 @@ function renderWeather(weatherCode, tempMax, precipProb, tomorrowPrecipProb) {
             <span class="dot"></span>${clothing}
         </div>
     `;
-
-    const tomorrowEl = document.getElementById('weatherTomorrow');
-    tomorrowEl.textContent = tomorrowPrecipProb === undefined
-        ? ''
-        : `明日: ${tomorrowPrecipProb >= UMBRELLA_THRESHOLD ? '傘が必要' : '傘は不要'}`;
 }
 
 function getClothingAdvice(tempMax) {
@@ -555,14 +545,15 @@ function getWorkStatusIcon(status) {
 // ========================================
 async function renderTodayScreen() {
     const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
     const todayStr = formatDate(today);
+    const tomorrowStr = formatDate(tomorrow);
 
-    // 勤務形態
-    const status = getWorkStatus(today);
-    document.getElementById('workBadgeLabel').textContent = getWorkStatusLabel(status);
-    document.getElementById('workBadge').querySelector('.badge-icon').outerHTML = getWorkStatusIcon(status);
+    renderDayWork('Today', today);
+    renderDayWork('Tomorrow', tomorrow);
 
-    // 今週の残り出社日数（少ないほど良い＝緑、多いほど注意＝赤）
+    // 今週の残り出社日数（少ないほど良い＝緑、多いほど注意＝赤）。今日カードのみ表示。
     const remainingOfficeDays = await getRemainingOfficeDaysThisWeek();
     const circle = document.getElementById('officeDaysCircle');
     circle.textContent = remainingOfficeDays;
@@ -570,38 +561,24 @@ async function renderTodayScreen() {
     if (remainingOfficeDays === 1) circle.classList.add('warning');
     if (remainingOfficeDays >= 2) circle.classList.add('danger');
 
-    renderGarbage(today);
-    renderGarbageTomorrow(today);
-    renderEventList(eventsCache[todayStr] || [], document.getElementById('todayEvents'));
+    renderDayGarbage('Today', today);
+    renderDayGarbage('Tomorrow', tomorrow);
 
-    const upcomingEvents = await getUpcomingEvents();
-    renderUpcomingEvents(upcomingEvents);
+    renderEventList(eventsCache[todayStr] || [], document.getElementById('eventsToday'));
+    const tomorrowEvents = await getEventsForDate(tomorrowStr);
+    renderEventList(tomorrowEvents, document.getElementById('eventsTomorrow'));
 
     fetchWeather();
 }
 
-function renderUpcomingEvents(events) {
-    const container = document.getElementById('upcomingEvents');
-    container.innerHTML = '';
-    if (events.length === 0) {
-        container.innerHTML = '<div class="event-empty">予定なし</div>';
-        return;
-    }
-    const days = ['日', '月', '火', '水', '木', '金', '土'];
-    events.forEach(ev => {
-        const [y, m, d] = ev.date.split('-').map(Number);
-        const dateLabel = `${m}/${d}(${days[new Date(y, m - 1, d).getDay()]})`;
-        container.innerHTML += `
-            <div class="event-item" onclick="openEditEventModal('${ev.id}', '${ev.date}', '${escapeHtml(ev.text)}')">
-                <span class="event-date-badge">${dateLabel}</span>
-                ${escapeHtml(ev.text)}
-            </div>
-        `;
-    });
+function renderDayWork(suffix, dateObj) {
+    const status = getWorkStatus(dateObj);
+    document.getElementById(`workBadgeLabel${suffix}`).textContent = getWorkStatusLabel(status);
+    document.getElementById(`workBadge${suffix}`).querySelector('.badge-icon').outerHTML = getWorkStatusIcon(status);
 }
 
-function renderGarbage(dateObj) {
-    const garbageRow = document.getElementById('garbageRow');
+function renderDayGarbage(suffix, dateObj) {
+    const garbageRow = document.getElementById(`garbageRow${suffix}`);
     const garbage = getGarbageForDate(dateObj);
     garbageRow.innerHTML = '';
     if (garbage.length === 0) {
@@ -611,14 +588,6 @@ function renderGarbage(dateObj) {
     garbage.forEach(type => {
         garbageRow.innerHTML += `<div class="garbage-badge">${escapeHtml(type)}</div>`;
     });
-}
-
-function renderGarbageTomorrow(dateObj) {
-    const tomorrow = new Date(dateObj);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const garbage = getGarbageForDate(tomorrow);
-    const label = garbage.length > 0 ? garbage.map(type => escapeHtml(type)).join('・') : 'ゴミなし';
-    document.getElementById('garbageTomorrow').textContent = `明日: ${label}`;
 }
 
 function renderEventList(events, container) {
@@ -821,12 +790,17 @@ async function goToday() {
     renderCalendar();
 }
 
-function openWorkModal() {
+let workModalTargetDate = null;
+
+function openWorkModal(which) {
+    workModalTargetDate = new Date();
+    if (which === 'tomorrow') workModalTargetDate.setDate(workModalTargetDate.getDate() + 1);
+
     const modal = document.getElementById('workModal');
     const optionsContainer = document.getElementById('workModalOptions');
     optionsContainer.innerHTML = '';
 
-    const currentStatus = getWorkStatus(new Date());
+    const currentStatus = getWorkStatus(workModalTargetDate);
     Object.entries(WORK_STATUSES).forEach(([key, value]) => {
         const option = document.createElement('div');
         option.className = `modal-option${key === currentStatus ? ' selected' : ''}`;
@@ -834,11 +808,12 @@ function openWorkModal() {
         option.onclick = () => selectWorkOption(key);
         optionsContainer.appendChild(option);
     });
+    modal.querySelector('.modal-title').textContent = '勤務形態を変更';
     modal.classList.add('show');
 }
 
 async function selectWorkOption(status) {
-    const saved = await saveWorkRecord(formatDate(new Date()), status);
+    const saved = await saveWorkRecord(formatDate(workModalTargetDate), status);
     if (!saved) return;
 
     closeModal('workModal');
@@ -854,7 +829,7 @@ document.getElementById('newEventInput').addEventListener('keydown', (event) => 
     }
 });
 
-// 「これからの予定」の＋から、当日を除く今週〜来週の日曜までの日付を選ばせる
+// FAB（右下＋）から、今日〜来週の日曜までの日付を選ばせる。予定追加はここが唯一の入口。
 function openDateSelectModal() {
     const modal = document.getElementById('dateSelectModal');
     const optionsContainer = document.getElementById('dateSelectOptions');
@@ -865,12 +840,13 @@ function openDateSelectModal() {
     rangeEnd.setDate(monday.getDate() + 13); // 来週の日曜まで
 
     const days = ['日', '月', '火', '水', '木', '金', '土'];
-    const cursor = new Date();
-    cursor.setDate(cursor.getDate() + 1); // 明日から（今日はFABから追加する）
+    const today = new Date();
+    const todayStr = formatDate(today);
+    const cursor = new Date(today);
 
     while (cursor <= rangeEnd) {
         const dateStr = formatDate(cursor);
-        const label = `${cursor.getMonth() + 1}月${cursor.getDate()}日(${days[cursor.getDay()]})`;
+        const label = dateStr === todayStr ? '今日' : `${cursor.getMonth() + 1}月${cursor.getDate()}日(${days[cursor.getDay()]})`;
         const option = document.createElement('div');
         option.className = 'modal-option';
         option.textContent = label;

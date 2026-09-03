@@ -176,53 +176,31 @@ body {
     to { opacity: 1; transform: translateY(0); }
 }
 
-/* ===== カード ===== */
-.card {
+/* ===== カード（今日／明日） ===== */
+.day-card {
     background: var(--bg-card);
     border-radius: var(--radius-lg);
     padding: 16px 18px;
     margin-bottom: 8px;
     border: 1px solid var(--border-light);
-    transition: border-color 0.2s;
 }
-.card:hover { border-color: rgba(240, 246, 252, 0.1); }
-.card-label {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    margin-bottom: 12px;
-}
-.card-label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.card-label-row .card-label { margin-bottom: 0; }
-.card-add-btn {
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    border: none;
-    background: rgba(240, 246, 252, 0.06);
-    color: var(--text-secondary);
+.day-card-header {
     font-size: 15px;
-    line-height: 1;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background 0.15s, color 0.15s;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.01em;
+    margin-bottom: 14px;
 }
-.card-add-btn:hover { background: rgba(240, 246, 252, 0.1); color: var(--text); }
-
-/* 翌日の補足情報（天気・ゴミで共通使用） */
-.tomorrow-note {
-    font-size: 12px;
-    color: var(--text-secondary);
-    font-weight: 450;
-    margin-top: 12px;
-    padding-top: 10px;
+.day-section {
+    padding-top: 14px;
+    margin-top: 14px;
     border-top: 1px solid var(--border-light);
 }
-.tomorrow-note:empty { display: none; }
+.day-section:first-of-type {
+    padding-top: 0;
+    margin-top: 0;
+    border-top: none;
+}
 
 /* ===== 天気カード ===== */
 .weather-row { display: flex; align-items: flex-start; gap: 14px; }
@@ -312,9 +290,6 @@ body {
     font-weight: 600;
     color: var(--text);
     letter-spacing: 0;
-}
-.secondary-card {
-    opacity: 0.9;
 }
 .garbage-badge .icon { color: var(--text-secondary); }
 
