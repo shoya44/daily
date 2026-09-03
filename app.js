@@ -109,11 +109,17 @@ async function showMainApp() {
     document.getElementById('main-app').style.display = 'block';
 
     updateHeaderDate();
-    await loadSettings();
-    await loadCurrentMonthData();
-    renderCalendar();
-    await renderTodayScreen();
-    switchTab('screen-today', document.querySelector('.tab.active'));
+
+    try {
+        await loadSettings();
+        await loadCurrentMonthData();
+        renderCalendar();
+        await renderTodayScreen();
+        switchTab('screen-today', document.querySelector('.tab.active'));
+    } catch (error) {
+        console.error('App initialization error:', error);
+        showToast('データを読み込めませんでした。通信状態をご確認ください。');
+    }
 }
 
 // ========================================
@@ -182,12 +188,24 @@ async function forceUpdateApp() {
 // ========================================
 async function loadSettings() {
     if (!db || !currentUser) return;
-    const { data, error } = await db.from('settings').select('data').eq('user_id', currentUser.id).single();
-    if (error || !data) {
+
+    const { data, error } = await db
+        .from('settings')
+        .select('data')
+        .eq('user_id', currentUser.id)
+        .maybeSingle();
+
+    if (error) {
+        console.error('Settings load error:', error);
+        throw new Error('設定の読み込みに失敗しました');
+    }
+
+    if (!data) {
         settings = getDefaultSettings();
     } else {
         settings = data.data || getDefaultSettings();
     }
+
     renderSettingsScreen();
 }
 
@@ -261,6 +279,7 @@ async function addEventToDb(dateStr, text) {
     }
     if (!eventsCache[dateStr]) eventsCache[dateStr] = [];
     eventsCache[dateStr].push(data);
+    showToast('予定を追加しました');
     return data;
 }
 
@@ -275,6 +294,7 @@ async function updateEventInDb(eventId, dateStr, text) {
         const idx = eventsCache[dateStr].findIndex(ev => ev.id === eventId);
         if (idx !== -1) eventsCache[dateStr][idx] = data;
     }
+    showToast('予定を更新しました');
     return true;
 }
 
@@ -292,7 +312,8 @@ async function deleteEventFromDb(eventId, dateStr) {
 }
 
 async function saveWorkRecord(dateStr, status) {
-    if (!db || !checkOnline()) return;
+    if (!db || !checkOnline()) return false;
+
     const { data: existing } = await db
         .from('work_records')
         .select('id')
@@ -301,15 +322,23 @@ async function saveWorkRecord(dateStr, status) {
 
     let error;
     if (existing) {
-        ({ error } = await db.from('work_records').update({ status, updated_at: new Date().toISOString() }).eq('id', existing.id));
+        ({ error } = await db
+            .from('work_records')
+            .update({ status, updated_at: new Date().toISOString() })
+            .eq('id', existing.id));
     } else {
-        ({ error } = await db.from('work_records').insert([{ date: dateStr, status }]));
+        ({ error } = await db
+            .from('work_records')
+            .insert([{ date: dateStr, status }]));
     }
+
     if (error) {
         showToast('勤務形態の保存に失敗しました（通信状態をご確認ください）');
-        return;
+        return false;
     }
+
     workRecordsCache[dateStr] = status;
+    return true;
 }
 
 // ========================================
@@ -442,8 +471,8 @@ function renderWeather(weatherCode, tempMax, precipProb) {
     const needUmbrella = precipProb >= UMBRELLA_THRESHOLD;
     const clothing = getClothingAdvice(tempMax);
     adviceRow.innerHTML = `
-        <div class="weather-advice ${needUmbrella ? 'umbrella-alert' : 'clothing'}">
-            <span class="dot"></span>${needUmbrella ? '傘必要' : '傘不要'}
+        <div class="weather-advice ${needUmbrella ? 'umbrella-alert' : 'normal'}">
+            <span class="dot"></span>${needUmbrella ? '傘を持っていく' : '傘は不要'}
         </div>
         <div class="weather-advice clothing">
             <span class="dot"></span>${clothing}
@@ -786,12 +815,22 @@ function openWorkModal() {
     modal.classList.add('show');
 }
 
-function selectWorkOption(status) {
-    saveWorkRecord(formatDate(new Date()), status);
+async function selectWorkOption(status) {
+    const saved = await saveWorkRecord(formatDate(new Date()), status);
+    if (!saved) return;
+
     closeModal('workModal');
     renderTodayScreen();
     renderCalendar();
+    showToast(`${getWorkStatusLabel(status)}に変更しました`);
 }
+
+document.getElementById('newEventInput').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        addEvent();
+    }
+});
 
 function openAddEventModal(dateStr) {
     addEventTargetDate = dateStr || formatDate(new Date());

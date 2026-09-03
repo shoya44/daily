@@ -180,8 +180,8 @@ body {
 .card {
     background: var(--bg-card);
     border-radius: var(--radius-lg);
-    padding: 18px 20px;
-    margin-bottom: 10px;
+    padding: 16px 18px;
+    margin-bottom: 8px;
     border: 1px solid var(--border-light);
     transition: border-color 0.2s;
 }
@@ -275,14 +275,17 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    background: rgba(240, 246, 252, 0.03);
-    border: 1px solid rgba(240, 246, 252, 0.05);
-    border-radius: 7px;
-    padding: 6px 12px;
-    font-size: 12px;
-    font-weight: 500;
+    background: rgba(163, 113, 247, 0.08);
+    border: 1px solid rgba(163, 113, 247, 0.2);
+    border-radius: 9px;
+    padding: 9px 14px;
+    font-size: 14px;
+    font-weight: 600;
     color: var(--text);
     letter-spacing: 0;
+}
+.secondary-card {
+    opacity: 0.9;
 }
 .garbage-badge .icon { color: var(--text-secondary); }
 
@@ -305,7 +308,7 @@ body {
 }
 .event-item:hover { border-color: rgba(240, 246, 252, 0.06); }
 .event-item .event-icon { color: var(--text-muted); flex-shrink: 0; margin-top: 1px; }
-.event-empty { color: var(--text-muted); font-size: 13px; padding: 8px 0; font-weight: 450; }
+.event-empty { color: var(--text-muted); font-size: 12px; padding: 6px 0; font-weight: 450; }
 .event-date-badge {
     font-size: 11px;
     font-weight: 600;

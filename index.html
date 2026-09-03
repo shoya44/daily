@@ -51,7 +51,7 @@
         <div class="screen" id="screen-today">
             <!-- 天気カード -->
             <div class="card" id="weatherCard">
-                <div class="card-label">今日の天気</div>
+                <div class="card-label">今日どうする？</div>
                 <div class="weather-row">
                     <svg class="icon icon-lg weather-icon" id="weatherIcon" viewBox="0 0 24 24"></svg>
                     <div>
@@ -95,8 +95,8 @@
             </div>
 
             <!-- 今週の残り予定 -->
-            <div class="card">
-                <div class="card-label">今週の残り予定</div>
+            <div class="card secondary-card">
+                <div class="card-label">今週の予定</div>
                 <div class="event-list" id="weekEvents">
                     <div class="event-empty">読み込み中...</div>
                 </div>
@@ -232,7 +232,7 @@
         <div class="modal-sheet">
             <div class="modal-handle"></div>
             <div class="modal-title" id="addEventModalTitle">予定を追加</div>
-            <input type="text" id="newEventInput" class="modal-input" placeholder="予定やメモを入力..." autocomplete="off">
+            <input type="text" id="newEventInput" class="modal-input" placeholder="何する？" autocomplete="off">
             <button class="modal-submit" onclick="addEvent()">追加</button>
         </div>
     </div>
